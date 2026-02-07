@@ -1,0 +1,9 @@
+::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+}
+
+body {
+    -ms-overflow-style: none;  /* IE ve Edge için */
+    scrollbar-width: none;  /* Firefox için */
+}

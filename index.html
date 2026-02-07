@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Blink</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div id="title-bar">
+        <div class="nav-controls">
+            <div class="nav-btn" onclick="goBack()">❮</div>
+            <div class="nav-btn" onclick="goForward()">❯</div>
+        </div>
+        <div class="drag-region">Blink</div>
+        <div class="window-controls">
+            <div class="control-btn" onclick="sendControl('minimize')">_</div>
+            <div class="control-btn" onclick="sendControl('maximize')">▢</div>
+            <div class="control-btn close-btn" onclick="sendControl('close')">✕</div>
+        </div>
+    </div>
+
+    <div id="app-body">
+        <div id="sidebar">
+            <div class="logo"><img src="icon.ico" alt="">
+            </div>
+            <div id="app-icons"></div>
+            <div class="nav-item" onclick="openModal()">
+                <div class="icon-box" style="color:#43b581; font-size:24px">+</div>
+            </div>
+        </div>
+        <div id="content"></div>
+    </div>
+
+    <div id="modal">
+        <div class="modal-content">
+            <h3 style="margin:0">Uygulama Ekle</h3>
+            <input type="text" id="app-name" placeholder="İsim (Örn: Slack)">
+            <input type="text" id="app-url" placeholder="URL (https://...)">
+            <button class="modal-btn" onclick="addNewApp()">Ekle</button>
+            <button class="modal-btn" style="background:#444" onclick="closeModal()">İptal</button>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        let apps = JSON.parse(localStorage.getItem('nexus_apps')) || [];
+
+        function sendControl(action) { ipcRenderer.send('window-controls', action); }
+        function openModal() { document.getElementById('modal').style.display = 'flex'; }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+        // 1. Kayıtlı Uygulamaları Yükle
+        window.onload = () => {
+            if (apps.length === 0) {
+                // İlk açılışta boş gelmesin diye varsayılanlar
+                apps = [
+                    { id: 'whatsapp', name: 'WhatsApp', url: 'https://web.whatsapp.com' },
+                    { id: 'discord', name: 'Discord', url: 'https://discord.com/app' }
+                ];
+                saveApps();
+            }
+            apps.forEach(app => createAppElements(app.id, app.name, app.url));
+        };
+
+        function saveApps() { localStorage.setItem('nexus_apps', JSON.stringify(apps)); }
+
+        function addNewApp() {
+            const name = document.getElementById('app-name').value;
+            const url = document.getElementById('app-url').value;
+            if (!name || !url) return;
+
+            const id = 'app_' + Date.now();
+            const newApp = { id, name, url };
+            apps.push(newApp);
+            saveApps();
+
+            createAppElements(id, name, url);
+            closeModal();
+            document.getElementById('app-name').value = '';
+            document.getElementById('app-url').value = '';
+        }
+
+        function createAppElements(id, name, url) {
+            const iconUrl = `https://www.google.com/s2/favicons?domain=${url}&sz=128`;
+
+            // Sidebar İkonu
+            const navItem = document.createElement('div');
+            navItem.className = 'nav-item';
+            navItem.setAttribute('data-id', id);
+            navItem.onclick = () => switchApp(id, navItem);
+            navItem.innerHTML = `<div class="icon-box"><img src="${iconUrl}"></div>`;
+            document.getElementById('app-icons').appendChild(navItem);
+
+            const wv = document.createElement('webview');
+            wv.id = id;
+            wv.src = url;
+            wv.partition = `persist:${id}`;
+            wv.useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
+            // SCROLLBAR GİZLEME BURADA:
+            wv.addEventListener('dom-ready', () => {
+                // inject.css dosyasını webview içine enjekte ediyoruz
+                const fs = require('fs');
+                const path = require('path');
+                const cssPath = path.join(__dirname, 'inject.css');
+                const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+                wv.insertCSS(cssContent);
+            });
+
+            document.getElementById('content').appendChild(wv);
+
+            // İlk uygulamayı aç
+            if (document.querySelectorAll('.nav-item').length === 1) switchApp(id, navItem);
+
+            // Sağ tık silme
+            navItem.addEventListener('contextmenu', () => ipcRenderer.send('show-context-menu', id));
+        }
+
+        function switchApp(id, el) {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            el.classList.add('active');
+            document.querySelectorAll('webview').forEach(wv => wv.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        function goBack() { const active = document.querySelector('webview.active'); if (active) active.goBack(); }
+        function goForward() { const active = document.querySelector('webview.active'); if (active) active.goForward(); }
+
+        ipcRenderer.on('remove-app-confirm', (event, id) => {
+            if (confirm("Bu uygulamayı silmek istediğine emin misin?")) {
+                apps = apps.filter(a => a.id !== id);
+                saveApps();
+                document.querySelector(`[data-id="${id}"]`).remove();
+                document.getElementById(id).remove();
+                if (document.querySelector('.nav-item')) document.querySelector('.nav-item').click();
+            }
+        });
+    </script>
+</body>
+
+</html>
